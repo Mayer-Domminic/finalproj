@@ -1,0 +1,4 @@
+psycopg3
+pandas
+plotly
+flask

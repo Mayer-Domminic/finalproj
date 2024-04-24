@@ -1,0 +1,10 @@
+database schema & postgres up
+CRUD for database
+seeding in the database & user
+create input/output from user to CRUD
+make visualization functions
+unit tests for expected results
+make flask webby views
+add database of exercises and tutorials
+github Actions
+firebase
