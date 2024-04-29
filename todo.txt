@@ -1,12 +1,13 @@
-database schema & postgres up
-CRUD for database
-seeding in the database & user
-create input/output from user to CRUD
-make visualization functions
-unit tests for expected results
-make flask webby views
-add database of exercises and tutorials
-github Actions
-firebase
+make a python script to grab all the useful data from the csv, then import it into db
+make new statements for user creation
+make import statements for new workouts & exercises into each of the tables
+make view statements for seeing the query returned from a user-id
+then make those into full fledged functions & add modularity
+add unit tests & integration tests for querying/expected results
+then add github actions without the ui implementation
+host it on firebase post UI
+then add execution criteria
 
+[OPTIONAL]
+create flask user interface
 # https://strengthtoovercome.com/functional-fitness-exercise-database
