@@ -1,4 +1,5 @@
-make a python script to grab all the useful data from the csv, then import it into db
+# make a python script to grab all the useful data from the csv
+then import it into db
 
 rework postgres info with new table format, build schema
 
