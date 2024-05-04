@@ -1,4 +1,4 @@
-psycopg3
+psycopg
 pandas
 plotly
 flask
