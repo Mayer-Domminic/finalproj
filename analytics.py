@@ -37,7 +37,8 @@ def fetch_routine_progress(connection, user_id, routine_id):
             SELECT workout_ids FROM routine
             WHERE routine_id = %s AND user_id = %s;
             """, (routine_id, user_id))
-        workout_ids = cursor.fetchone()
+        workout_ids = cursor.fetchall()
+        print(workout_ids[0][0])
         if not workout_ids or not workout_ids[0]:
             return pd.DataFrame(columns=['date', 'weight'])
 
@@ -46,7 +47,7 @@ def fetch_routine_progress(connection, user_id, routine_id):
             FROM workout
             WHERE workout_id = ANY(%s)
             ORDER BY date;
-            """, (workout_ids[0],))
+            """, (workout_ids[0][0],))
 
         results = cursor.fetchall()
         if results:

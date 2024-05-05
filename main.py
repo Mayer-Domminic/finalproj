@@ -357,10 +357,11 @@ def view_analytics(connection, user_id):
             if routines:
                 routine_choice = int(input("Select the number of the routine to analyze: "))
                 print(routine_choice)
-                if routine_choice < len(routines):
+                if routine_choice < len(routines)+1:
                     print(routines)
                     routine_id = routines[routine_choice-1][0]
                     routine_name = routines[routine_choice-1][1]
+                    print(routine_name, routine_id, len(routines))
                     data = fetch_routine_progress(connection, user_id, routine_id)
                     if not data.empty:
                         plot_weight_progression(data, f"Routine: {routine_name}")
