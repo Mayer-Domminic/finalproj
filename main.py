@@ -1,5 +1,6 @@
 import csv
 import psycopg
+from analytics import *
 
 # SQL TABLE STRINGS
 exercise = """
@@ -46,6 +47,7 @@ CREATE TABLE workout (
     exercise_id INT,
     sets INT,
     reps INT[],
+    weights INT[],
     date DATE,
     description TEXT
     FOREIGN KEY (user_id) REFERENCES users(user_id),
@@ -66,18 +68,16 @@ CREATE TABLE log (
     log_id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(user_id),
     routine_id INT REFERENCES routine(routine_id),
-    workout_id INT REFERENCES workout(workout_id),
     date DATE,
     rating TEXT,
-    CHECK (routine_id IS NOT NULL OR workout_id IS NOT NULL),
-    CHECK (routine_id IS NULL OR workout_id IS NULL)
+    CHECK (routine_id IS NOT NULL)
 );
 """
 
 
 # postgres main commands (for random purposes)
 def get_connection():
-    return psycopg.connectionect(
+    return psycopg.connect(
         dbname="workout",
         user="postgres",
         password="abc123",
@@ -121,41 +121,43 @@ def login(connection, user):
 
 
 # ADD FUNCTIONS (SQL)
-def add_workout(connection, user_id, exercise_id, sets, reps, date, description):
+def add_workout(connection, user_id, exercise_id, sets, reps, weights, date, description):
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO workout (user_id, exercise_id, sets, reps, date, description)
-                VALUES (%s, %s, %s, %s, %s, %s);
-                """, (user_id, exercise_id, sets, reps, date, description))
+                INSERT INTO workout (user_id, exercise_id, sets, reps, weights, date, description)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING workout_id;
+                """, (user_id, exercise_id, sets, reps, weights, date, description))
             connection.commit()
-            return True
-        return False
+            workout_id = cursor.fetchone()[0]
+            return workout_id
     except Exception as e:
-        print(f"An error occursorred: {e}")
+        print(f"An error occurred: {e}")
         connection.rollback()
         return None
-def add_log(connection, user_id, routine_id, workout_id, date, rating):
+def add_log(connection, user_id, routine_id, date, rating):
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO workout (user_id, exercises, description)
-                VALUES (%s, %s, %s);
-                """, (user_id, routine_id, workout_id, date, rating))
+                INSERT INTO log (user_id, routine_id, date, rating)
+                VALUES (%s, %s, %s, %s)
+                RETURNING log_id;
+                """, (user_id, routine_id, date, rating))
             connection.commit()
-            return True
-        return False
+            log_id = cursor.fetchone()[0]
+            return log_id
     except Exception as e:
-        print(f"An error occursorred: {e}")
+        print(f"An error occurred: {e}")
         connection.rollback()
         return None
 def add_routine(connection, user_id, name, workouts, description):
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
-                INSERT INTO routine (user_id, name, workouts, description)
-                VALUES (%s, %s, %s, %s);
-                """, (user_id, name, workouts, description))
+            INSERT INTO routine (name, user_id, workout_ids, description)
+            VALUES (%s, %s, %s, %s) RETURNING routine_id;
+            """, (name, user_id, workouts, description))
             connection.commit()
             return True
         return False
@@ -287,17 +289,24 @@ def exercise_decision(connection, exercise_id):
 def view_last_logs(connection, user_id):
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT * FROM log
-            WHERE user_id = %s
-            ORDER BY date DESC
-            LIMIT 5;
-            """, (user_id,))
+                SELECT log_id, date, rating, routine_id FROM log
+                WHERE user_id = %s
+                ORDER BY date DESC
+                LIMIT 5;
+                """, (user_id,))
         logs = cursor.fetchall()
-        if logs:
-            for log in logs:
-                print(log)
-        else:
-            print("No logs found.")
+
+        if not logs:
+            print("No recent logs found.")
+            return
+
+        print("\nLast 5 Logs:")
+        for log in logs:
+            cursor.execute("SELECT name FROM routine WHERE routine_id = %s", (log[3],))
+            routine = cursor.fetchone()
+            routine_name = routine[0] if routine else "Unknown Routine"
+
+            print(f"Log ID: {log[0]}, Date: {log[1]}, Rating: {log[2]}, Routine: {routine_name}")
 def view_last_routines(connection, user_id):
     with connection.cursor() as cursor:
         cursor.execute("""
@@ -315,7 +324,7 @@ def view_last_routines(connection, user_id):
 def view_last_workouts(connection, user_id):
     with connection.cursor() as cursor:
         cursor.execute("""
-            SELECT workout_id, exercise_id, sets, reps, date, description FROM workout
+            SELECT workout_id, exercise_id, sets, reps, weights, date, description FROM workout
             WHERE user_id = %s
             ORDER BY date DESC
             LIMIT 5;
@@ -323,20 +332,80 @@ def view_last_workouts(connection, user_id):
         workouts = cursor.fetchall()
         if workouts:
             for workout in workouts:
-                print(f"Workout ID: {workout[0]}, Description: {workout[5]}, Date: {workout[4]}, Exercise ID: {workout[1]}, Sets: {workout[2]}, Reps: {workout[3]}")
+                print(f"Workout ID: {workout[0]}, Description: {workout[6]}, Date: {workout[5]}, Exercise ID: {workout[1]}, Sets: {workout[2]}, Reps: {workout[3]}, Weight: {workout[4]}")
         else:
             print("No recent workouts found.")
+def view_analytics(connection, user_id):
+    while True:
+        print("\nAnalytics Menu:")
+        print("1. Workout Frequency")
+        print("2. Routine Weight Progression")
+        print("3. Max Weight Lifted Over Time")
+        print("4. Return to Main Menu")
+
+        choice = input("Select an analytics option (1-4): ")
+
+        if choice == '1':
+            timeframe = input("Enter timeframe (week/month): ")
+            data = fetch_workout_frequency(connection, user_id, timeframe)
+            if not data.empty:
+                plot_workout_frequency(data)
+            else:
+                print("No workout data available for this period.")
+        elif choice == '2':
+            routines = fetch_routines(connection, user_id)
+            if routines:
+                routine_choice = int(input("Select the number of the routine to analyze: "))
+                print(routine_choice)
+                if routine_choice < len(routines):
+                    print(routines)
+                    routine_id = routines[routine_choice-1][0]
+                    routine_name = routines[routine_choice-1][1]
+                    data = fetch_routine_progress(connection, user_id, routine_id)
+                    if not data.empty:
+                        plot_weight_progression(data, f"Routine: {routine_name}")
+                    else:
+                        print("No weight data found for the specified routine.")
+                else:
+                    print("Invalid routine selection. Please select a number from the list.")
+            else:
+                print("No routines available to analyze.")
+        elif choice == '3':
+            data = fetch_max_weight_data(connection, user_id)
+            if not data.empty:
+                plot_max_weight(connection, user_id)
+            else:
+                print("No max weight data available.")
+        elif choice == '4':
+            break
+        else:
+            print("Invalid choice, please choose again.")
 
 
 # CREATE
 def create_new_log(connection, user_id):
     print("\nCreating a New Log:")
-    workout_id = input("Enter workout ID: ")
-    routine_id = input("Enter routine ID: ")
+    routines = fetch_routines(connection, user_id)
+    if not routines:
+        print("No routines available to log.")
+        return
+
+    try:
+        routine_choice = int(input("Select the number of the routine you want to log: "))
+        if routine_choice < 0 or routine_choice >= len(routines):
+            print("Invalid selection. Please try again.")
+            return
+        routine_id = routines[routine_choice][0]
+    except ValueError:
+        print("Invalid input. Please enter a numeric value.")
+        return
+
     date = input("Enter date (YYYY-MM-DD): ")
     rating = input("Enter your rating or feedback: ")
-    if (add_log(connection, user_id, routine_id, workout_id, date, rating)):
-        print("Log created!")
+
+    # Add the log with the selected routine
+    if add_log(connection, user_id, routine_id, date, rating):
+        print("Log created successfully!")
     else:
         print("Log failed to create.")
 def create_new_routine(connection, user_id):
@@ -355,15 +424,6 @@ def create_new_routine(connection, user_id):
         else:
             print("No workout found. Try again.")
     add_routine(connection, user_id, routine_name, workouts, description)
-
-    with connection.cursor() as cursor:
-        cursor.execute("""
-            INSERT INTO routine (user_id, name, description, workouts)
-            VALUES (%s, %s, %s, %s) RETURNING routine_id;
-            """, (user_id, routine_name, description, workouts))
-        routine_id = cursor.fetchone()[0]
-        connection.commit()
-        print(f"Routine created successfully with ID: {routine_id}")
 def create_new_workout(connection, user_id):
     print("\nCreating a New Workout:")
     description = input("Enter a description for the workout: ")
@@ -401,13 +461,16 @@ def create_new_workout(connection, user_id):
 
     sets = int(input("Enter number of sets: "))
     reps = list(map(int, input("Enter reps for each set separated by space: ").split()))
+    include_weights = input("Do you want to include weights for each set? (yes/no): ")
+    weights = []
+    if include_weights.lower() == 'yes':
+        weights = list(map(int, input("Enter weights for each set separated by space: ").split()))
+        if len(weights) != sets:
+            print("Number of weights does not match number of sets. Using default weights.")
+            weights = []
     date = input("Enter date (YYYY-MM-DD): ")
 
-    workout_id = add_workout(connection, user_id, exercise_id, sets, reps, date, description)
-    if workout_id:
-        print(f"Workout created successfully with ID: {workout_id}")
-    else:
-        print("Failed to create new workout.")
+    add_workout(connection, user_id, exercise_id, sets, reps, weights, date, description)
 def create_new_exercise(connection):
     print("\nEnter new exercise details (type 'quit' at any point to stop entering and set all following to None):")
 
@@ -499,13 +562,15 @@ def fetch_routines(connection, user_id):
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT routine_id, name FROM routine
-            WHERE user_id = %s;
+            WHERE user_id = %s ORDER BY routine_id DESC;
             """, (user_id,))
         routines = cursor.fetchall()
         if not routines:
+            print("No routines found.")
             return None
-        for routine in routines:
-            print(f"Routine ID: {routine[0]}, Name: {routine[1]}")
+        print("Available Routines:")
+        for i, routine in enumerate(routines, 1):
+            print(f"{i}. {routine[1]} (ID: {routine[0]})")
         return routines
 def fetch_workouts(connection, user_id):
     with connection.cursor() as cursor:
@@ -537,9 +602,6 @@ def fetch_logs(connection, user_id):
 def edit_routine(connection, user_id):
     print("Available Routines:")
     routines = fetch_routines(connection, user_id)
-    if not routines:
-        print("No routines available to edit.")
-        return
 
     routine_id = input("Enter the ID of the routine you want to edit: ")
 
@@ -621,9 +683,6 @@ def delete_log(connection, user_id):
 def delete_routine(connection, user_id):
     print("Available Routines:")
     routines = fetch_routines(connection, user_id)
-    if not routines:
-        print("No routines available to delete.")
-        return
 
     routine_id = input("Enter the ID of the routine to delete: ")
     with connection.cursor() as cursor:
@@ -703,10 +762,12 @@ def main_menu(connection, user_id):
         print("   - Workouts: Log specific exercises, including sets and reps, on a given date.")
         print("4. Manage Exercises")
         print("   - Exercises: Add new exercises, search for existing ones, or modify exercise details.")
-        print("5. Exit")
+        print("5. View Analytics")
+        print("   - Analytics: View workout frequencies, weight progression, and other performance insights.")
+        print("6. Exit")
         print("   - Exit the application.")
 
-        choice = input("Enter your choice (1-5): ")
+        choice = input("Enter your choice (1-6): ")
 
         if choice == '1':
             manage_logs(connection, user_id)
@@ -715,8 +776,10 @@ def main_menu(connection, user_id):
         elif choice == '3':
             manage_workouts(connection, user_id)
         elif choice == '4':
-            manage_exercises(connection)
+            manage_exercises(connection, user_id)
         elif choice == '5':
+            view_analytics(connection, user_id)
+        elif choice == '6':
             print("Exiting...")
             break
         else:
